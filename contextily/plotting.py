@@ -4,15 +4,48 @@ import numpy as np
 from . import tile_providers as sources
 from .tile import _calculate_zoom, bounds2img, _sm2ll
 from matplotlib import patheffects
+import matplotlib.pyplot as plt
+from threading import Thread
 
 INTERPOLATION = 'bilinear'
 ZOOM = 'auto'
 ATTRIBUTION = ("Map tiles by Stamen Design, under CC BY 3.0. "\
                "Data by OpenStreetMap, under ODbL.")
+               
+   
+               
+class ViewManager():
+    def __init__(self, ax, **kwargs):
+        self.ax = add_basemap(ax, **kwargs)
+    
+        self.ax.get_figure().canvas.mpl_connect("scroll_event", lambda event : self.scroll_callback(event))
+        self.ax.callbacks.connect("xlim_changed", lambda _ax : self.zoom_callback(_ax))
+        self.ax.callbacks.connect("ylim_changed", lambda _ax : self.zoom_callback(_ax))
+        
+        self.kwargs = kwargs
+        self._worker_thread = None
+        
+    def zoom_worker(self, ax):
+        try:
+            add_basemap(ax, **self.kwargs)
+        except requests.exceptions.HTTPError:
+            pass
+        ax.get_figure().after(1, lambda : plt.pause(0.01))
+    
+        
+        
+    def zoom_callback(self, ax):
+        self._worker_thread = Thread(target=lambda: self.zoom_worker(ax), daemon=True)
+        self._worker_thread.start()
+    
+    def scroll_callback(self, ax):
+        pass
+        #assert(ax is self.ax)
+        #self.ax = add_basemap(ax, **self.kwargs)
 
 def add_basemap(ax, zoom=ZOOM, url=sources.ST_TERRAIN, 
-		interpolation=INTERPOLATION, attribution = ATTRIBUTION, 
-                **extra_imshow_args):
+        interpolation=INTERPOLATION, attribution = ATTRIBUTION, 
+        ll=False, **extra_imshow_args):
     """
     Add a (web/local) basemap to `ax`
     ...
@@ -38,6 +71,10 @@ def add_basemap(ax, zoom=ZOOM, url=sources.ST_TERRAIN,
     attribution         : str
                           [Optional. Defaults to standard `ATTRIBUTION`] Text to be added at the
                           bottom of the axis.
+    ll                  : boolean
+                          [Optional. Defaults to False]
+                          Whether axis bounds are lat/lon or mercator projection.
+                          Passed through to bounds2img.
     **extra_imshow_args : dict
                           Other parameters to be passed to `imshow`.
 
@@ -69,17 +106,21 @@ def add_basemap(ax, zoom=ZOOM, url=sources.ST_TERRAIN,
 
     """
     # If web source
-    if url[:4] == 'http':
+    if url.startswith('http'):
         # Extent
         left, right = ax.get_xlim()
         bottom, top = ax.get_ylim()
         # Zoom
         if isinstance(zoom, str) and (zoom.lower() == 'auto'):
-            min_ll = _sm2ll(left, bottom)
-            max_ll = _sm2ll(right, top)
+            if ll:
+                min_ll = (left, bottom)
+                max_ll = (right, top)
+            else:
+                min_ll = _sm2ll(left, bottom)
+                max_ll = _sm2ll(right, top)
             zoom = _calculate_zoom(*min_ll, *max_ll)
         image, extent = bounds2img(left, bottom, right, top,
-                                   zoom=zoom, url=url, ll=False)
+                                   zoom=zoom, url=url, ll=ll)
     # If local source
     else:
         import rasterio as rio
