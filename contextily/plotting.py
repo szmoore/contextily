@@ -6,6 +6,7 @@ from .tile import _calculate_zoom, bounds2img, _sm2ll, TILE_CACHE_DIR
 from matplotlib import patheffects
 import matplotlib.pyplot as plt
 import time
+import requests
 
 INTERPOLATION = 'bilinear'
 ZOOM = 'auto'
