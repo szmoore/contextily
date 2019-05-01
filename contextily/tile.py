@@ -24,7 +24,7 @@ for url in dir(sources):
     TILE_SIZES[url] = DEFAULT_TILE_SIZE
 # TODO: Overwrite tile sizes for alternative endpoints here
 
-# Note: Using a permanent storage location may voilate the tile server's terms and conditions
+# Note: Using a permanent storage location may violate the tile server's terms and conditions
 TILE_CACHE_DIR = os.path.join(tempfile.gettempdir(), "contextily", "tiles")
 
 def bounds2raster(w, s, e, n, path, zoom='auto',
@@ -150,7 +150,7 @@ def _make_error_tile(url=sources.ST_TERRAIN, status_code=404):
 
 def bounds2img(w, s, e, n, zoom='auto',
                url=sources.ST_TERRAIN, ll=False,
-               wait=0, max_retries=2, handle_missing_tiles=False):
+               wait=0, max_retries=2, handle_missing_tiles=False, cachedir=TILE_CACHE_DIR):
     '''
     Take bounding box and zoom and return an image with all the tiles
     that compose the map and its Spherical Mercator extent.
@@ -189,6 +189,11 @@ def bounds2img(w, s, e, n, zoom='auto',
               [Optional. Default: False]
               Fill in missing tiles with a placeholder image, 
               when the tile API returns a 404, instead of re-raising
+    cachedir: string
+              [Optional. Default: TILE_CACHE_DIR]
+              Cache downloaded tiles images into a local directory.
+              The directory is created if it doesn't exist.
+              Set to None to disable the cache.
 
     Returns
     -------
@@ -204,7 +209,6 @@ def bounds2img(w, s, e, n, zoom='auto',
     if zoom == 'auto':
         zoom = _calculate_zoom(w, s, e, n)
     
-    print("Mapping from %f,%f to %f,%f" % (w,s,e,n))
     tiles = []
     arrays = []
     for t in mt.tiles(w, s, e, n, [zoom]):
@@ -212,12 +216,11 @@ def bounds2img(w, s, e, n, zoom='auto',
         tile_url = url.replace('tileX', str(x)).replace('tileY', str(y)).replace('tileZ', str(z))
         # ---
         try:
-            image = _fetch_tile(tile_url, wait, max_retries)
+            image = _fetch_tile(tile_url, wait, max_retries, cachedir)
         except requests.exceptions.HTTPError as e:
             if not handle_missing_tiles or e.response.status_code != 404:
                 raise
             image = _make_error_tile(url, e.response.status_code)
-            
         # ---
         tiles.append(t)
         arrays.append(image)
@@ -242,19 +245,17 @@ def _fetch_tile(tile_url, wait, max_retries, cachedir=TILE_CACHE_DIR):
         if not os.path.exists(cachedir):
             os.makedirs(cachedir)
         
-        # Split of URL header and make sure path is directorified
+        
         try:
-            cached_path = os.path.join(cachedir, os.path.sep.join(tile_url.split("://")[1:]).replace("/", os.path.sep))
+            # Split of URL header and make sure path is directorified
+            cached_path = os.path.join(cachedir, 
+                os.path.sep.join(tile_url.split("://")[1:]).replace("/", os.path.sep))
             image = Image.open(cached_path).convert('RGB')
             image = np.asarray(image)
-            #print("Hit Cache")
             return image
         except (IOError, OSError, FileNotFoundError) as e:
             pass
-            #if verbose:
-            #    print("Missed cache - %s" % repr(e))
-            
-    print("Request: %s" % tile_url)
+
     request = _retryer(tile_url, wait, max_retries)
     with io.BytesIO(request.content) as image_stream:
         image = Image.open(image_stream).convert('RGB')

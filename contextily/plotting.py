@@ -5,43 +5,12 @@ from . import tile_providers as sources
 from .tile import _calculate_zoom, bounds2img, _sm2ll
 from matplotlib import patheffects
 import matplotlib.pyplot as plt
-from threading import Thread
+import time
 
 INTERPOLATION = 'bilinear'
 ZOOM = 'auto'
 ATTRIBUTION = ("Map tiles by Stamen Design, under CC BY 3.0. "\
                "Data by OpenStreetMap, under ODbL.")
-               
-   
-               
-class ViewManager():
-    def __init__(self, ax, **kwargs):
-        self.ax = add_basemap(ax, **kwargs)
-    
-        self.ax.get_figure().canvas.mpl_connect("scroll_event", lambda event : self.scroll_callback(event))
-        self.ax.callbacks.connect("xlim_changed", lambda _ax : self.zoom_callback(_ax))
-        self.ax.callbacks.connect("ylim_changed", lambda _ax : self.zoom_callback(_ax))
-        
-        self.kwargs = kwargs
-        self._worker_thread = None
-        
-    def zoom_worker(self, ax):
-        try:
-            add_basemap(ax, **self.kwargs)
-        except requests.exceptions.HTTPError:
-            pass
-        ax.get_figure().after(1, lambda : plt.pause(0.01))
-    
-        
-        
-    def zoom_callback(self, ax):
-        self._worker_thread = Thread(target=lambda: self.zoom_worker(ax), daemon=True)
-        self._worker_thread.start()
-    
-    def scroll_callback(self, ax):
-        pass
-        #assert(ax is self.ax)
-        #self.ax = add_basemap(ax, **self.kwargs)
 
 def add_basemap(ax, zoom=ZOOM, url=sources.ST_TERRAIN, 
         interpolation=INTERPOLATION, attribution = ATTRIBUTION, 
@@ -165,3 +134,63 @@ def add_attribution(ax, att=ATTRIBUTION):
             path_effects=[patheffects.withStroke(linewidth=2,
                                                  foreground="w")])
     return ax
+
+class ViewManager():
+    '''
+        Class that calls add_basemap on an axis whenever its xlim and ylim 
+         are both changed. This imitates the experience of an online map viewer.
+         
+        This is a very rough implementation, as it 
+         blocks the main thread until every tile has been fetched.
+    '''
+    
+    _BOTH_LIMITS_CHANGED_TIMEOUT = 0.1 # Timeout for both limits changing
+    
+    def __init__(self, ax, **kwargs):
+        '''
+            ax : Axis to apply the basemap to
+            kwargs : Arguments passed through to add_basemap
+        '''
+        self.ax = add_basemap(ax, **kwargs) # Add initial basemap
+    
+        # matplotlib uses two separate events for xlim and ylim
+        # our strategy is to call add_basemap when both have changed within quick succession
+        # more complicated but better strategy would be to make a new matplotlib figure manager class.
+        self.ax.callbacks.connect("xlim_changed", lambda _ax : self._xlim_changed(_ax))
+        self.ax.callbacks.connect("ylim_changed", lambda _ax : self._ylim_changed(_ax))
+        self.kwargs = kwargs
+        
+        self._updating = False # Flag to prevent requesting multiple updates at once
+        self._last_xchange = time.time() # Time xlim last changed
+        self._last_ychange = time.time() # Time ylim last changed
+        
+    def _xlim_changed(self, ax):
+        self._last_xchange = time.time()
+        if self._last_xchange - self._last_ychange < self._BOTH_LIMITS_CHANGED_TIMEOUT:
+           self.update(ax)
+    
+    def _ylim_changed(self, ax):
+        self._last_ychange = time.time()
+        if self._last_ychange - self._last_xchange < self._BOTH_LIMITS_CHANGED_TIMEOUT:
+           self.update(ax)            
+
+    def update(self, ax=None):
+        '''
+            Update the plot based on the current limits of the axis.
+            This is called automatically when the axis limits are changed.
+            
+            ax : Optional; defaults to self.ax
+        '''
+        ax = ax or self.ax
+        # Prevent infinite loop of view updates
+        if self._updating:
+            return
+        self._updating = True 
+        # Redraw figure first (gives a low resolution update)
+        self.ax.get_figure().canvas.draw() 
+        # Update figure (blocks main thread...); ignore HTTP errors
+        try:
+            add_basemap(ax, **self.kwargs)
+        except requests.exceptions.HTTPError:
+            pass
+        self._updating = False
