@@ -7,13 +7,12 @@ import io
 import os
 import numpy as np
 import rasterio as rio
-import math
 import tempfile
+import math
 from functools import reduce
 from PIL import Image, ImageDraw, ImageFont
 from rasterio.transform import from_origin
 from . import tile_providers as sources
-
 
 
 __all__ = ['bounds2raster', 'bounds2img', 'howmany']
@@ -122,14 +121,12 @@ def _make_error_tile(url=sources.ST_TERRAIN, status_code=404):
     '''
     _make_error_tile.cache = getattr(_make_error_tile, "cache", {})
     _make_error_tile.cache[status_code] = _make_error_tile.cache.get(status_code, {})
-    
-    cache = _make_error_tile.cache[status_code]
 
+    cache = _make_error_tile.cache[status_code]
     size = TILE_SIZES.get(url, DEFAULT_TILE_SIZE)
-    
+
     if size not in cache:
         image = Image.new(mode="RGB", size=size,color="pink")
-        
         try:
             draw = ImageDraw.Draw(image)
             draw.rectangle((0,0)+size, outline="red", fill="gray")
@@ -144,13 +141,12 @@ def _make_error_tile(url=sources.ST_TERRAIN, status_code=404):
             pass
         cache[size] = image
     return np.asarray(cache[size])
-        
-    
-    
+
 
 def bounds2img(w, s, e, n, zoom='auto',
                url=sources.ST_TERRAIN, ll=False,
-               wait=0, max_retries=2, handle_missing_tiles=False, cachedir=TILE_CACHE_DIR):
+               wait=0, max_retries=2, handle_missing_tiles=False,
+               cachedir=TILE_CACHE_DIR):
     '''
     Take bounding box and zoom and return an image with all the tiles
     that compose the map and its Spherical Mercator extent.
@@ -189,11 +185,13 @@ def bounds2img(w, s, e, n, zoom='auto',
               [Optional. Default: False]
               Fill in missing tiles with a placeholder image, 
               when the tile API returns a 404, instead of re-raising
+
     cachedir: string
               [Optional. Default: TILE_CACHE_DIR]
               Cache downloaded tiles images into a local directory.
               The directory is created if it doesn't exist.
               Set to None to disable the cache.
+
 
     Returns
     -------
@@ -208,7 +206,6 @@ def bounds2img(w, s, e, n, zoom='auto',
         e, n = _sm2ll(e, n)
     if zoom == 'auto':
         zoom = _calculate_zoom(w, s, e, n)
-    
     tiles = []
     arrays = []
     for t in mt.tiles(w, s, e, n, [zoom]):
@@ -263,9 +260,7 @@ def _fetch_tile(tile_url, wait, max_retries, cachedir=TILE_CACHE_DIR):
             if not os.path.exists(os.path.dirname(cached_path)):
                 os.makedirs(os.path.dirname(cached_path))
             image.save(cached_path)
-            
         image = np.asarray(image)
-            
     return image
 
 
