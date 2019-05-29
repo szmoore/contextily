@@ -285,7 +285,10 @@ def _retryer(tile_url, wait, max_retries):
     request object containing the web response.
     """
     try:
-        request = requests.get(tile_url)
+        request = requests.get(
+            tile_url,
+            headers={'User-Agent': 'contextily (Python)'}
+        )
         request.raise_for_status()
     except requests.HTTPError as original_error:
         if request.status_code == 404:
